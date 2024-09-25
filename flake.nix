@@ -31,16 +31,23 @@
             config.allowUnfree = true;
           };
 
-          devShells.default = pkgs.mkShell {
-            buildInputs = with pkgs; [
-              air
-              go
-              nodejs
-              sqlc
-              tailwindcss
-              templ
-            ];
-          };
+          devShells.default =
+            let
+              build = pkgs.writeShellScriptBin "build" ''
+                go build -o oidc-sso main.go auth.go 
+              '';
+            in
+            pkgs.mkShell {
+              buildInputs = with pkgs; [
+                air
+                build
+                go
+                nodejs
+                sqlc
+                tailwindcss
+                templ
+              ];
+            };
         };
     };
 }
