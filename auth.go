@@ -97,7 +97,7 @@ func CallbackHandler(c echo.Context) error {
 
 	redirectTo, ok := stateSession.Values["redirect_to"]
 	if !ok {
-		logger.Error("redirectTo not set. no redirect will occur.")
+		fmt.Println("redirectTo not set. no redirect will occur.")
 		return c.NoContent(http.StatusOK)
 	}
 
@@ -114,7 +114,7 @@ func CheckTokenHandler(c echo.Context) error {
 
 	resp, err := rs.Introspect[*oidc.IntrospectionResponse](c.Request().Context(), resourceServer, token)
 	if err != nil {
-		logger.Error(err)
+		fmt.Println(err)
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
@@ -126,9 +126,9 @@ func CheckTokenHandler(c echo.Context) error {
 	userSession.Values["claims"] = resp.Claims
 	userSession.Values["email"] = resp.Email
 	userSession.Values["username"] = resp.Username
-	logger.Info("\tclaims:", userSession.Values["claims"])
-	logger.Info("\temail:", userSession.Values["email"])
-	logger.Info("\tusername:", userSession.Values["username"])
+	fmt.Println("\tclaims:", userSession.Values["claims"])
+	fmt.Println("\temail:", userSession.Values["email"])
+	fmt.Println("\tusername:", userSession.Values["username"])
 	return c.NoContent(http.StatusOK)
 }
 
@@ -136,7 +136,7 @@ func checkToken(c echo.Context) (bool, string) {
 	// check session for token
 	ok, token := checkSessionForToken(c)
 	if ok {
-		logger.Info("found valid session token: ", token)
+		fmt.Println("found valid session token: ", token)
 		return ok, token
 	}
 
@@ -156,20 +156,20 @@ func checkAuthHeaderForToken(auth string) (bool, string) {
 	}
 
 	token := strings.TrimPrefix(auth, oidc.PrefixBearer)
-	logger.Info("found valid header token: ", token)
+	fmt.Println("found valid header token: ", token)
 	return true, token
 }
 
 func checkSessionForToken(c echo.Context) (bool, string) {
 	sess, err := session.Get("user_session", c)
 	if err != nil {
-		logger.Error(errors.New("error retrieving user_session"))
+		fmt.Println(errors.New("error retrieving user_session"))
 		return false, ""
 	}
 
 	token, ok := sess.Values["access_token"]
 	if !ok {
-		logger.Error(errors.New("no access_token set"))
+		fmt.Println(errors.New("no access_token set"))
 		return false, ""
 	}
 
@@ -197,7 +197,7 @@ func loadOidcParams() {
 }
 
 func logAndReturnErr(err error) error {
-	logger.Error(err)
+	fmt.Println(err)
 	return err
 }
 
