@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"log"
 	"os"
 
 	"github.com/gorilla/sessions"
@@ -41,6 +43,9 @@ func init() {
 
 	cookieAuthKey = []byte(os.Getenv("OIDC_SSO_HASH_KEY"))
 	cookieEncryptKey = []byte(os.Getenv("OIDC_SSO_ENCRYPT_KEY"))
+
+	debugPtr := flag.Bool("debug", false, "output debug info to logs")
+	logDebugInfo(*debugPtr)
 }
 
 func main() {
@@ -56,4 +61,17 @@ func main() {
 	e.GET("/login", LoginHandler)
 
 	logger.Fatal(e.Start(":" + listenPort))
+}
+
+func logDebugInfo(d bool) {
+	if d {
+		log.Println("-----------------------------")
+		log.Println("--- Environment Variables ---")
+		log.Println("-----------------------------")
+		for _, e := range os.Environ() {
+			log.Println("\t", e)
+		}
+
+		log.Println("\n-----------------------------\n")
+	}
 }
