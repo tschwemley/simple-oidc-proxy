@@ -49,6 +49,7 @@ func LoginHandler(c echo.Context) error {
 	if rd != "" {
 		stateSession, err := session.Get("state_session", c)
 		if err != nil {
+			fmt.Println("err:", err)
 			return err
 		}
 
@@ -62,6 +63,7 @@ func LoginHandler(c echo.Context) error {
 		stateSession.Values["redirect_to"] = rd
 
 		if err := stateSession.Save(c.Request(), c.Response()); err != nil {
+			fmt.Println("err:", err)
 			return err
 		}
 	}
@@ -78,11 +80,13 @@ func CallbackHandler(c echo.Context) error {
 
 	tokens, err := rp.CodeExchange[*oidc.IDTokenClaims](r.Context(), r.FormValue("code"), relyingParty)
 	if err != nil {
+		fmt.Println("err:", err)
 		return logAndReturnErr(err)
 	}
 
 	userSession, err := session.Get("user_session", c)
 	if err != nil {
+		fmt.Println("err:", err)
 		return logAndReturnErr(err)
 	}
 
@@ -96,16 +100,19 @@ func CallbackHandler(c echo.Context) error {
 	userSession.Values["access_token"] = tokens.AccessToken
 
 	if err := userSession.Save(c.Request(), c.Response()); err != nil {
+		fmt.Println("err:", err)
 		return err
 	}
 
 	stateSession, err := session.Get("state", c)
 	if err != nil {
+		fmt.Println("err:", err)
 		return err
 	}
 
 	redirectTo, ok := stateSession.Values["redirect_to"]
 	if !ok {
+		fmt.Println("redirect not ok")
 		return c.NoContent(http.StatusOK)
 	}
 
@@ -116,18 +123,21 @@ func CheckTokenHandler(c echo.Context) error {
 	ok, token := checkToken(c)
 
 	if !ok {
+		fmt.Println("err:", err)
 		logAndReturnErr(errors.New("no token set"))
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
 	resp, err := rs.Introspect[*oidc.IntrospectionResponse](c.Request().Context(), resourceServer, token)
 	if err != nil {
+		fmt.Println("err:", err)
 		logAndReturnErr(err)
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
 	data, err := json.Marshal(resp)
 	if err != nil {
+		fmt.Println("err:", err)
 		logger.Fatal(err)
 	}
 
