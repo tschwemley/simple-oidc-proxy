@@ -49,8 +49,7 @@ func LoginHandler(c echo.Context) error {
 	if rd != "" {
 		stateSession, err := session.Get("state_session", c)
 		if err != nil {
-			fmt.Println("err:", err)
-			return err
+			return logAndReturnErr(err)
 		}
 
 		stateSession.Options = &sessions.Options{
@@ -63,13 +62,11 @@ func LoginHandler(c echo.Context) error {
 		stateSession.Values["redirect_to"] = rd
 
 		if err := stateSession.Save(c.Request(), c.Response()); err != nil {
-			fmt.Println("err:", err)
-			return err
+			return logAndReturnErr(err)
 		}
 	}
 
 	url := rp.AuthURL("login", relyingParty)
-	fmt.Println("url: ", url)
 	return c.Redirect(http.StatusFound, url)
 }
 
@@ -104,7 +101,7 @@ func CallbackHandler(c echo.Context) error {
 		return err
 	}
 
-	stateSession, err := session.Get("state", c)
+	stateSession, err := session.Get("state_session", c)
 	if err != nil {
 		fmt.Println("err:", err)
 		return err
@@ -112,7 +109,7 @@ func CallbackHandler(c echo.Context) error {
 
 	redirectTo, ok := stateSession.Values["redirect_to"]
 	if !ok {
-		fmt.Println("redirect not ok")
+		logger.Error("redirectTo not set. no redirect will occur.")
 		return c.NoContent(http.StatusOK)
 	}
 
@@ -129,15 +126,14 @@ func CheckTokenHandler(c echo.Context) error {
 
 	resp, err := rs.Introspect[*oidc.IntrospectionResponse](c.Request().Context(), resourceServer, token)
 	if err != nil {
-		fmt.Println("err:", err)
-		logAndReturnErr(err)
+		logger.Error(err)
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
 	data, err := json.Marshal(resp)
 	if err != nil {
-		fmt.Println("err:", err)
-		logger.Fatal(err)
+		logger.Error(err)
+		return c.NoContent(http.StatusInternalServerError)
 	}
 
 	return c.JSONPretty(200, data, "  ")
@@ -147,7 +143,7 @@ func checkToken(c echo.Context) (bool, string) {
 	// check session for token
 	ok, token := checkSessionForToken(c)
 	if ok {
-		fmt.Println("token: ", token)
+		logger.Info("found valid session token: ", token)
 		return ok, token
 	}
 
@@ -166,19 +162,21 @@ func checkAuthHeaderForToken(auth string) (bool, string) {
 		return false, ""
 	}
 
-	return true, strings.TrimPrefix(auth, oidc.PrefixBearer)
+	token := strings.TrimPrefix(auth, oidc.PrefixBearer)
+	logger.Info("found valid header token: ", token)
+	return true, token
 }
 
 func checkSessionForToken(c echo.Context) (bool, string) {
 	sess, err := session.Get("user_session", c)
 	if err != nil {
-		logAndReturnErr(errors.New("error retrieving user_session"))
+		logger.Error(errors.New("error retrieving user_session"))
 		return false, ""
 	}
 
 	token, ok := sess.Values["access_token"]
 	if !ok {
-		logAndReturnErr(errors.New("no access_token set"))
+		logger.Error(errors.New("no access_token set"))
 		return false, ""
 	}
 
@@ -206,13 +204,13 @@ func loadOidcParams() {
 }
 
 func logAndReturnErr(err error) error {
+	logger.Error(err)
 	return err
 }
 
 func options() []rp.Option {
 	options := []rp.Option{
 		rp.WithVerifierOpts(rp.WithIssuedAtOffset(5 * time.Second)),
-		// rp.WithHTTPClient(client),
 		rp.WithSigningAlgsFromDiscovery(),
 	}
 

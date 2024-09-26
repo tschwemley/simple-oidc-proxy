@@ -20,6 +20,8 @@ var (
 func main() {
 	e := echo.New()
 	logger = e.Logger
+	_, w, _ := os.Pipe()
+	logger.SetOutput(w)
 
 	loadEnv()
 	setupAuthClients()
