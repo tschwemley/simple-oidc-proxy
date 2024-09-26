@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -81,30 +80,19 @@ func CallbackHandler(c echo.Context) error {
 		return logAndReturnErr(err)
 	}
 
-	userSession, err := session.Get("user_session", c)
+	userSession, err := userSession(c)
 	if err != nil {
-		fmt.Println("err:", err)
 		return logAndReturnErr(err)
 	}
 
-	userSession.Options = &sessions.Options{
-		Domain:   cookieDomain,
-		Path:     "/",
-		MaxAge:   60 * 60 * 10, // TODO: make a const (kc SSO session max [10hrs])
-		HttpOnly: true,
-		Secure:   true,
-	}
 	userSession.Values["access_token"] = tokens.AccessToken
-
-	if err := userSession.Save(c.Request(), c.Response()); err != nil {
-		fmt.Println("err:", err)
-		return err
+	if err := saveSession(userSession, c); err != nil {
+		return logAndReturnErr(err)
 	}
 
 	stateSession, err := session.Get("state_session", c)
 	if err != nil {
-		fmt.Println("err:", err)
-		return err
+		return logAndReturnErr(err)
 	}
 
 	redirectTo, ok := stateSession.Values["redirect_to"]
@@ -130,13 +118,17 @@ func CheckTokenHandler(c echo.Context) error {
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
-	data, err := json.Marshal(resp)
+	var userInfo *oidc.UserInfo
+	resp.SetUserInfo(userInfo)
+
+	userSession, err := userSession(c)
 	if err != nil {
-		logger.Error(err)
-		return c.NoContent(http.StatusInternalServerError)
+		return logAndReturnErr(err)
 	}
 
-	return c.JSONPretty(200, data, "  ")
+	userSession.Values["user_info"] = userInfo
+	logger.Info("user info:", userInfo)
+	return c.NoContent(http.StatusOK)
 }
 
 func checkToken(c echo.Context) (bool, string) {
@@ -222,6 +214,14 @@ func options() []rp.Option {
 	return options
 }
 
+func saveSession(session *sessions.Session, c echo.Context) error {
+	if err := session.Save(c.Request(), c.Response()); err != nil {
+		fmt.Println("err:", err)
+		return err
+	}
+	return nil
+}
+
 func setupAuthClients() {
 	var err error
 
@@ -234,4 +234,21 @@ func setupAuthClients() {
 	if err != nil {
 		logger.Fatalf("error creating resource server provider %s", err.Error())
 	}
+}
+
+func userSession(c echo.Context) (*sessions.Session, error) {
+	userSession, err := session.Get("user_session", c)
+	if err != nil {
+		return nil, err
+	}
+
+	userSession.Options = &sessions.Options{
+		Domain:   cookieDomain,
+		Path:     "/",
+		MaxAge:   60 * 60 * 10, // TODO: make a const (kc SSO session max [10hrs])
+		HttpOnly: true,
+		Secure:   true,
+	}
+
+	return userSession, nil
 }
