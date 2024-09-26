@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
-
-	// "github.com/zitadel/oidc/v3/pkg/client/rp"
 
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo-contrib/session"
@@ -30,25 +28,18 @@ var (
 	keyPath      = ""
 	responseMode = ""
 
-	client = &http.Client{
-		Timeout: time.Minute,
-	}
+	cookieAuthKey    []byte
+	cookieEncryptKey []byte
+
+	clientID     string
+	clientSecret string
+	issuerURL    string
+	redirectURL  string
+
+	// client = &http.Client{
+	// 	Timeout: time.Minute,
+	// }
 )
-
-func init() {
-	var err error
-
-	// use log.Fatalf instead of logger here since logger doesn't get declared until after init() calls run
-	relyingParty, err = rp.NewRelyingPartyOIDC(context.TODO(), issuerURL, clientID, clientSecret, redirectURL, scopes, options()...)
-	if err != nil {
-		log.Fatalf("error creating relying party provider %s", err.Error())
-	}
-
-	resourceServer, err = rs.NewResourceServerClientCredentials(context.TODO(), issuerURL, clientID, clientSecret)
-	if err != nil {
-		log.Fatalf("error creating resource server provider %s", err.Error())
-	}
-}
 
 func LoginHandler(c echo.Context) error {
 	rd := c.QueryParam("rd")
@@ -134,7 +125,7 @@ func CheckTokenHandler(c echo.Context) error {
 
 	data, err := json.Marshal(resp)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	return c.JSONPretty(200, data, "  ")
@@ -182,10 +173,29 @@ func checkSessionForToken(c echo.Context) (bool, string) {
 	return true, token.(string)
 }
 
+func loadOidcParams() {
+	clientID = os.Getenv("OIDC_SSO_CLIENT_ID")
+	clientSecret = os.Getenv("OIDC_SSO_CLIENT_SECRET")
+
+	issuerURL = os.Getenv("OIDC_SSO_ISSUER_URL")
+	redirectURL = os.Getenv("OIDC_SSO_REDIRECT_URL")
+
+	if clientID == "" || clientSecret == "" || issuerURL == "" || redirectURL == "" {
+		logger.Fatal("missing one or more of required oidc params: client_id, client_secret, issuer_url, redirect_url")
+	}
+
+	cookieAuthKey = []byte(os.Getenv("OIDC_SSO_HASH_KEY"))
+	cookieEncryptKey = []byte(os.Getenv("OIDC_SSO_ENCRYPT_KEY"))
+}
+
+func logAndReturnErr(err error) error {
+	return err
+}
+
 func options() []rp.Option {
 	options := []rp.Option{
 		rp.WithVerifierOpts(rp.WithIssuedAtOffset(5 * time.Second)),
-		rp.WithHTTPClient(client),
+		// rp.WithHTTPClient(client),
 		rp.WithSigningAlgsFromDiscovery(),
 	}
 
@@ -197,6 +207,16 @@ func options() []rp.Option {
 	return options
 }
 
-func logAndReturnErr(err error) error {
-	return err
+func setupAuthClients() {
+	var err error
+
+	relyingParty, err = rp.NewRelyingPartyOIDC(context.TODO(), issuerURL, clientID, clientSecret, redirectURL, scopes, options()...)
+	if err != nil {
+		logger.Fatalf("error creating relying party provider %s", err.Error())
+	}
+
+	resourceServer, err = rs.NewResourceServerClientCredentials(context.TODO(), issuerURL, clientID, clientSecret)
+	if err != nil {
+		logger.Fatalf("error creating resource server provider %s", err.Error())
+	}
 }
