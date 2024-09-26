@@ -31,23 +31,23 @@
             config.allowUnfree = true;
           };
 
-          devShells.default =
-            let
-              build = pkgs.writeShellScriptBin "build" ''
-                go build -o oidc-sso main.go auth.go 
-              '';
-            in
-            pkgs.mkShell {
-              buildInputs = with pkgs; [
-                air
-                build
-                go
-                nodejs
-                sqlc
-                tailwindcss
-                templ
-              ];
-            };
+          devShells.default = pkgs.mkShell {
+            buildInputs = with pkgs; [
+              air
+              go
+              nodejs
+              sqlc
+              tailwindcss
+              templ
+            ];
+          };
+
+          packages.default = pkgs.buildGoModule {
+            name = "oidc-sso";
+            src = ./.;
+            vendorHash = "sha256-XN8Q0NASGpbfAeT5RI1gxfwLBcpaMq4MjT5xnNw4zuU=";
+          };
         };
+
     };
 }

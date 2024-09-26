@@ -1,15 +1,12 @@
 module git.schwem.io/oidcsso
 
-go 1.23
-
-toolchain go1.23.1
+go 1.22
 
 require (
-	github.com/gorilla/sessions v1.4.0
+	github.com/gorilla/sessions v1.3.0
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo-contrib v0.17.1
 	github.com/labstack/echo/v4 v4.12.0
-	github.com/sirupsen/logrus v1.9.3
 	github.com/zitadel/oidc/v3 v3.29.1
 )
 
@@ -25,6 +22,7 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/muhlemmer/gu v0.3.1 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/zitadel/logging v0.6.0 // indirect
