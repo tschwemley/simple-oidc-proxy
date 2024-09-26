@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -123,9 +124,15 @@ func CheckTokenHandler(c echo.Context) error {
 		return logAndReturnErr(err)
 	}
 
-	userSession.Values["claims"] = resp.Claims
+	claims, err := json.Marshal(resp.Claims)
+	if err != nil {
+		return logAndReturnErr(err)
+	}
+
+	userSession.Values["claims"] = claims
 	userSession.Values["email"] = resp.Email
 	userSession.Values["username"] = resp.Username
+
 	saveSession(userSession, c)
 
 	return c.NoContent(http.StatusOK)
