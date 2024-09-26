@@ -1,5 +1,5 @@
 {
-  description = "Go web project w/ HTMX, Echo, and Templ";
+  description = "KISS OIDC Authentication Proxy.";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/master";
