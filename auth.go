@@ -126,9 +126,8 @@ func CheckTokenHandler(c echo.Context) error {
 	userSession.Values["claims"] = resp.Claims
 	userSession.Values["email"] = resp.Email
 	userSession.Values["username"] = resp.Username
-	fmt.Println("\tclaims:", userSession.Values["claims"])
-	fmt.Println("\temail:", userSession.Values["email"])
-	fmt.Println("\tusername:", userSession.Values["username"])
+	saveSession(userSession, c)
+
 	return c.NoContent(http.StatusOK)
 }
 
