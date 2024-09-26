@@ -36,10 +36,6 @@ var (
 	clientSecret string
 	issuerURL    string
 	redirectURL  string
-
-	// client = &http.Client{
-	// 	Timeout: time.Minute,
-	// }
 )
 
 func LoginHandler(c echo.Context) error {
@@ -81,13 +77,13 @@ func CallbackHandler(c echo.Context) error {
 		return logAndReturnErr(err)
 	}
 
-	userSession, err := userSession(c)
+	ssoSession, err := keycloakSession("sso_session", c)
 	if err != nil {
 		return logAndReturnErr(err)
 	}
 
-	userSession.Values["access_token"] = tokens.AccessToken
-	if err := saveSession(userSession, c); err != nil {
+	ssoSession.Values["access_token"] = tokens.AccessToken
+	if err := saveSession(ssoSession, c); err != nil {
 		return logAndReturnErr(err)
 	}
 
@@ -119,7 +115,7 @@ func CheckTokenHandler(c echo.Context) error {
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
-	userSession, err := userSession(c)
+	userSession, err := keycloakSession("user_session", c)
 	if err != nil {
 		return logAndReturnErr(err)
 	}
@@ -135,6 +131,8 @@ func CheckTokenHandler(c echo.Context) error {
 
 	saveSession(userSession, c)
 
+	fmt.Println("claims: ", userSession.Values["claims"])
+
 	return c.NoContent(http.StatusOK)
 }
 
@@ -142,7 +140,6 @@ func checkToken(c echo.Context) (bool, string) {
 	// check session for token
 	ok, token := checkSessionForToken(c)
 	if ok {
-		fmt.Println("found valid session token: ", token)
 		return ok, token
 	}
 
@@ -167,7 +164,7 @@ func checkAuthHeaderForToken(auth string) (bool, string) {
 }
 
 func checkSessionForToken(c echo.Context) (bool, string) {
-	sess, err := session.Get("user_session", c)
+	sess, err := session.Get("sso_session", c)
 	if err != nil {
 		fmt.Println(errors.New("error retrieving user_session"))
 		return false, ""
@@ -221,8 +218,8 @@ func options() []rp.Option {
 	return options
 }
 
-func saveSession(session *sessions.Session, c echo.Context) error {
-	if err := session.Save(c.Request(), c.Response()); err != nil {
+func saveSession(s *sessions.Session, c echo.Context) error {
+	if err := s.Save(c.Request(), c.Response()); err != nil {
 		fmt.Println("err:", err)
 		return err
 	}
@@ -243,13 +240,13 @@ func setupAuthClients() {
 	}
 }
 
-func userSession(c echo.Context) (*sessions.Session, error) {
-	userSession, err := session.Get("user_session", c)
+func keycloakSession(name string, c echo.Context) (*sessions.Session, error) {
+	kcSession, err := session.Get(name, c)
 	if err != nil {
 		return nil, err
 	}
 
-	userSession.Options = &sessions.Options{
+	kcSession.Options = &sessions.Options{
 		Domain:   cookieDomain,
 		Path:     "/",
 		MaxAge:   60 * 60 * 10, // TODO: make a const (kc SSO session max [10hrs])
@@ -257,5 +254,5 @@ func userSession(c echo.Context) (*sessions.Session, error) {
 		Secure:   true,
 	}
 
-	return userSession, nil
+	return kcSession, nil
 }
