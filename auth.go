@@ -118,16 +118,17 @@ func CheckTokenHandler(c echo.Context) error {
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
-	var userInfo *oidc.UserInfo
-	resp.SetUserInfo(userInfo)
-
 	userSession, err := userSession(c)
 	if err != nil {
 		return logAndReturnErr(err)
 	}
 
-	userSession.Values["user_info"] = userInfo
-	logger.Info("user info:", userInfo)
+	userSession.Values["claims"] = resp.Claims
+	userSession.Values["email"] = resp.Email
+	userSession.Values["username"] = resp.Username
+	logger.Info("\tclaims:", userSession.Values["claims"])
+	logger.Info("\temail:", userSession.Values["email"])
+	logger.Info("\tusername:", userSession.Values["username"])
 	return c.NoContent(http.StatusOK)
 }
 
