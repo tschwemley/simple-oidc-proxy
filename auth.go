@@ -123,7 +123,6 @@ func CheckTokenHandler(c echo.Context) error {
 	ok, token := checkToken(c)
 
 	if !ok {
-		fmt.Println("err:", err)
 		logAndReturnErr(errors.New("no token set"))
 		return c.NoContent(http.StatusUnauthorized)
 	}
