@@ -36,17 +36,17 @@ var (
 )
 
 func init() {
-	// ctx := context.TODO()
-
 	var err error
+
+	// use log.Fatalf instead of logger here since logger doesn't get declared until after init() calls run
 	relyingParty, err = rp.NewRelyingPartyOIDC(context.TODO(), issuerURL, clientID, clientSecret, redirectURL, scopes, options()...)
 	if err != nil {
-		logger.Fatalf("error creating relying party provider %s", err.Error())
+		log.Fatalf("error creating relying party provider %s", err.Error())
 	}
 
 	resourceServer, err = rs.NewResourceServerClientCredentials(context.TODO(), issuerURL, clientID, clientSecret)
 	if err != nil {
-		logger.Fatalf("error creating resource server provider %s", err.Error())
+		log.Fatalf("error creating resource server provider %s", err.Error())
 	}
 }
 
