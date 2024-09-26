@@ -28,6 +28,7 @@ var (
 	keyPath      = ""
 	responseMode = ""
 
+	cookieDomain     string
 	cookieAuthKey    []byte
 	cookieEncryptKey []byte
 
@@ -46,20 +47,21 @@ func LoginHandler(c echo.Context) error {
 
 	// set the state cookie if redirect url provided as query param
 	if rd != "" {
-		sess, err := session.Get("state", c)
+		stateSession, err := session.Get("state_session", c)
 		if err != nil {
 			return err
 		}
 
-		sess.Options = &sessions.Options{
+		stateSession.Options = &sessions.Options{
+			Domain:   cookieDomain,
 			Path:     "/",
 			MaxAge:   60 * 5,
 			HttpOnly: true,
 			Secure:   true,
 		}
-		sess.Values["redirect_to"] = rd
+		stateSession.Values["redirect_to"] = rd
 
-		if err := sess.Save(c.Request(), c.Response()); err != nil {
+		if err := stateSession.Save(c.Request(), c.Response()); err != nil {
 			return err
 		}
 	}
@@ -85,6 +87,7 @@ func CallbackHandler(c echo.Context) error {
 	}
 
 	userSession.Options = &sessions.Options{
+		Domain:   cookieDomain,
 		Path:     "/",
 		MaxAge:   60 * 60 * 10, // TODO: make a const (kc SSO session max [10hrs])
 		HttpOnly: true,
@@ -186,6 +189,11 @@ func loadOidcParams() {
 
 	cookieAuthKey = []byte(os.Getenv("OIDC_SSO_HASH_KEY"))
 	cookieEncryptKey = []byte(os.Getenv("OIDC_SSO_ENCRYPT_KEY"))
+
+	cookieDomain = os.Getenv("OIDC_SSO_COOKIE_DOMAIN")
+	if cookieDomain == "" {
+		cookieDomain = "localhost"
+	}
 }
 
 func logAndReturnErr(err error) error {
