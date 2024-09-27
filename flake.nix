@@ -45,9 +45,8 @@
           packages.default = pkgs.buildGoModule {
             name = "oidc-sso";
             src = ./.;
-            vendorHash = "sha256-XN8Q0NASGpbfAeT5RI1gxfwLBcpaMq4MjT5xnNw4zuU=";
+            vendorHash = "sha256-jdhmp/BMWafmJHZ4uwWZFDHVo2Swuvg3ef69uuhLC0A=";
           };
         };
-
     };
 }
