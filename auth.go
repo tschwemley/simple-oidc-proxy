@@ -2,16 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
-	"github.com/gorilla/sessions"
-	"github.com/labstack/echo-contrib/session"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/zitadel/oidc/v3/pkg/client/rp"
 	"github.com/zitadel/oidc/v3/pkg/client/rs"
@@ -38,145 +36,103 @@ var (
 	redirectURL  string
 )
 
-func LoginHandler(c echo.Context) error {
-	rd := c.QueryParam("rd")
-
-	// set the state cookie if redirect url provided as query param
-	if rd != "" {
-		stateSession, err := session.Get("state_session", c)
-		if err != nil {
-			return logAndReturnErr(err)
-		}
-
-		stateSession.Options = &sessions.Options{
-			Domain:   cookieDomain,
-			Path:     "/",
-			MaxAge:   60 * 5,
-			HttpOnly: true,
-			Secure:   true,
-		}
-		stateSession.Values["redirect_to"] = rd
-
-		if err := stateSession.Save(c.Request(), c.Response()); err != nil {
-			return logAndReturnErr(err)
-		}
-	}
-
-	url := rp.AuthURL("login", relyingParty)
-	return c.Redirect(http.StatusFound, url)
-}
-
-func CallbackHandler(c echo.Context) error {
-	r := c.Request()
-
-	rp.CodeExchange[oidc.IDClaims](context.TODO(), "", relyingParty)
-
-	tokens, err := rp.CodeExchange[*oidc.IDTokenClaims](r.Context(), r.FormValue("code"), relyingParty)
+// AuthHandler returns 200 if the user is authorized and 401 if the user is not authorized. It is accessible at "/auth"
+func AuthHandler(c echo.Context) error {
+	sess, err := userSession(c)
 	if err != nil {
-		fmt.Println("err:", err)
-		return logAndReturnErr(err)
+		return logUnauthorized(c, err)
 	}
 
-	ssoSession, err := keycloakSession("sso_session", c)
-	if err != nil {
-		return logAndReturnErr(err)
-	}
-
-	ssoSession.Values["access_token"] = tokens.AccessToken
-	if err := saveSession(ssoSession, c); err != nil {
-		return logAndReturnErr(err)
-	}
-
-	stateSession, err := session.Get("state_session", c)
-	if err != nil {
-		return logAndReturnErr(err)
-	}
-
-	redirectTo, ok := stateSession.Values["redirect_to"]
-	if !ok {
-		fmt.Println("redirectTo not set. no redirect will occur.")
-		return c.NoContent(http.StatusOK)
-	}
-
-	return c.Redirect(http.StatusFound, redirectTo.(string))
-}
-
-func CheckTokenHandler(c echo.Context) error {
-	ok, token := checkToken(c)
-
-	if !ok {
-		logAndReturnErr(errors.New("no token set"))
+	if sess.IsNew {
+		logger.Info("no user session set. returning 401.")
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
-	resp, err := rs.Introspect[*oidc.IntrospectionResponse](c.Request().Context(), resourceServer, token)
-	if err != nil {
-		fmt.Println(err)
-		return c.NoContent(http.StatusUnauthorized)
+	info, ok := sess.Values["info"].([]byte)
+	if !ok {
+		return logUnauthorized(c, errors.New("unable to get user info from session"))
 	}
 
-	userSession, err := keycloakSession("user_session", c)
-	if err != nil {
-		return logAndReturnErr(err)
+	var userInfo oidc.UserInfo
+	if err := json.Unmarshal(info, &userInfo); err != nil {
+		return logUnauthorized(c, err)
 	}
 
-	claims, err := json.Marshal(resp.Claims)
-	if err != nil {
-		return logAndReturnErr(err)
-	}
-
-	userSession.Values["claims"] = claims
-	userSession.Values["email"] = resp.Email
-	userSession.Values["username"] = resp.Username
-
-	saveSession(userSession, c)
-
-	fmt.Println("claims: ", userSession.Values["claims"])
+	// TODO: it's probably going to be better long-term to just custom type the claims
+	logger.Info("user groups: ", userInfo.Claims["groups"])
+	logger.Info("realm access: ", userInfo.Claims["realm_access"])
+	logger.Info("resource access: ", userInfo.Claims["resource_access"])
 
 	return c.NoContent(http.StatusOK)
 }
 
-func checkToken(c echo.Context) (bool, string) {
-	// check session for token
-	ok, token := checkSessionForToken(c)
-	if ok {
-		return ok, token
-	}
-
-	// if no token found in session check auth header
-	return checkAuthHeaderForToken(c.Request().Header.Get("authorization"))
-}
-
-func checkAuthHeaderForToken(auth string) (bool, string) {
-	if auth == "" {
-		logAndReturnErr(errors.New("empty header"))
-		return false, ""
-	}
-
-	if !strings.HasPrefix(auth, oidc.PrefixBearer) {
-		logAndReturnErr(errors.New("invalid header"))
-		return false, ""
-	}
-
-	token := strings.TrimPrefix(auth, oidc.PrefixBearer)
-	fmt.Println("found valid header token: ", token)
-	return true, token
-}
-
-func checkSessionForToken(c echo.Context) (bool, string) {
-	sess, err := session.Get("sso_session", c)
+func LoginHandler(c echo.Context) error {
+	// create the sso session (this is short lived for the oidc/oauth flow and holds pkce, etc.)
+	oidcSession, err := oidcSession(c)
 	if err != nil {
-		fmt.Println(errors.New("error retrieving user_session"))
-		return false, ""
+		return logUnauthorized(c, err)
 	}
 
-	token, ok := sess.Values["access_token"]
+	// store url to redirect back to in the oidc session
+	oidcSession.Values["redirect"] = c.QueryParam("rd")
+
+	// generate code verifier and store in sso session
+	oidcSession.Values["pkce"] = base64.RawURLEncoding.EncodeToString([]byte(uuid.New().String()))
+
+	// generate the code challenge from the code verifier
+	codeChallenge := oidc.NewSHACodeChallenge(oidcSession.Values["pkce"].(string))
+
+	if err := saveSession(oidcSession, c); err != nil {
+		return logUnauthorized(c, err)
+	}
+
+	url := rp.AuthURL("", relyingParty, rp.WithCodeChallenge(codeChallenge))
+	return c.Redirect(http.StatusFound, url)
+}
+
+func CallbackHandler(c echo.Context) error {
+	oidcSession, err := oidcSession(c)
+	if err != nil {
+		return logUnauthorized(c, err)
+	}
+
+	codeVerifier, ok := oidcSession.Values["pkce"]
 	if !ok {
-		fmt.Println(errors.New("no access_token set"))
-		return false, ""
+		return logUnauthorized(c, errors.New("no code verifier set"))
 	}
 
-	return true, token.(string)
+	redirect, ok := oidcSession.Values["redirect"].(string)
+	if !ok {
+		redirect = "" // TODO: fill out
+	}
+
+	ctx := c.Request().Context()
+	code := c.QueryParam("code")
+
+	tokens, err := rp.CodeExchange[*oidc.IDTokenClaims](ctx, code, relyingParty, rp.WithCodeVerifier(codeVerifier.(string)))
+	if err != nil {
+		return logUnauthorized(c, err)
+	}
+
+	info, err := rp.Userinfo[*oidc.UserInfo](ctx, tokens.AccessToken, tokens.TokenType, tokens.IDTokenClaims.GetSubject(), relyingParty)
+	if err != nil {
+		return logUnauthorized(c, err)
+	}
+
+	userSession, err := userSession(c)
+	if err != nil {
+		return logUnauthorized(c, err)
+	}
+
+	infoJson, err := json.Marshal(info)
+	userSession.Values["info"] = infoJson
+
+	logger.Info("user info profile: ", info.Profile)
+	if err = saveSession(userSession, c); err != nil {
+		return logUnauthorized(c, err)
+	}
+
+	return c.Redirect(http.StatusFound, redirect)
 }
 
 func loadOidcParams() {
@@ -199,9 +155,9 @@ func loadOidcParams() {
 	}
 }
 
-func logAndReturnErr(err error) error {
-	fmt.Println(err)
-	return err
+func logUnauthorized(c echo.Context, err error) error {
+	logger.Error(err)
+	return c.NoContent(http.StatusUnauthorized)
 }
 
 func options() []rp.Option {
@@ -210,20 +166,7 @@ func options() []rp.Option {
 		rp.WithSigningAlgsFromDiscovery(),
 	}
 
-	// NOTE: this flow not currently in use but leaving here for potential future ref
-	if keyPath != "" {
-		options = append(options, rp.WithJWTProfile(rp.SignerFromKeyPath(keyPath)))
-	}
-
 	return options
-}
-
-func saveSession(s *sessions.Session, c echo.Context) error {
-	if err := s.Save(c.Request(), c.Response()); err != nil {
-		fmt.Println("err:", err)
-		return err
-	}
-	return nil
 }
 
 func setupAuthClients() {
@@ -238,21 +181,4 @@ func setupAuthClients() {
 	if err != nil {
 		logger.Fatalf("error creating resource server provider %s", err.Error())
 	}
-}
-
-func keycloakSession(name string, c echo.Context) (*sessions.Session, error) {
-	kcSession, err := session.Get(name, c)
-	if err != nil {
-		return nil, err
-	}
-
-	kcSession.Options = &sessions.Options{
-		Domain:   cookieDomain,
-		Path:     "/",
-		MaxAge:   60 * 60 * 10, // TODO: make a const (kc SSO session max [10hrs])
-		HttpOnly: true,
-		Secure:   true,
-	}
-
-	return kcSession, nil
 }
