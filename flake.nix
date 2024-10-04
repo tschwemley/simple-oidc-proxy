@@ -40,6 +40,10 @@
               tailwindcss
               templ
             ];
+
+            shellHook = ''
+              export GOPRIVATE=git.schwem.io
+            '';
           };
 
           packages.default = pkgs.buildGoModule {

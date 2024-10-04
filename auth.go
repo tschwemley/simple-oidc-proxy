@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
 
+	oidcTypes "git.schwem.io/schwem/pkgs/oidc"
+	"git.schwem.io/schwem/pkgs/sessions"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/zitadel/oidc/v3/pkg/client/rp"
@@ -19,6 +21,7 @@ import (
 var (
 	relyingParty   rp.RelyingParty
 	resourceServer rs.ResourceServer
+	sessionManager *sessions.SessionManager
 
 	redirectURI string
 	scopes      = []string{oidc.ScopeOpenID}
@@ -38,30 +41,21 @@ var (
 
 // AuthHandler returns 200 if the user is authorized and 401 if the user is not authorized. It is accessible at "/auth"
 func AuthHandler(c echo.Context) error {
-	sess, err := userSession(c)
+	// sess, err := userSession(c)
+	userSession, err := sessionManager.UserSession(c)
 	if err != nil {
 		return logUnauthorized(c, err)
 	}
 
-	if sess.IsNew {
+	if userSession.IsNew() {
 		logger.Info("no user session set. returning 401.")
 		return c.NoContent(http.StatusUnauthorized)
 	}
 
-	info, ok := sess.Values["info"].([]byte)
-	if !ok {
+	fmt.Println("userSession.IsValid(): ", userSession.IsValid())
+	if !userSession.IsValid() {
 		return logUnauthorized(c, errors.New("unable to get user info from session"))
 	}
-
-	var userInfo oidc.UserInfo
-	if err := json.Unmarshal(info, &userInfo); err != nil {
-		return logUnauthorized(c, err)
-	}
-
-	// TODO: it's probably going to be better long-term to just custom type the claims
-	logger.Info("user groups: ", userInfo.Claims["groups"])
-	logger.Info("realm access: ", userInfo.Claims["realm_access"])
-	logger.Info("resource access: ", userInfo.Claims["resource_access"])
 
 	return c.NoContent(http.StatusOK)
 }
@@ -119,16 +113,13 @@ func CallbackHandler(c echo.Context) error {
 		return logUnauthorized(c, err)
 	}
 
-	userSession, err := userSession(c)
+	userSessionValues := oidcTypes.NewUserInfo().FromTokens(tokens).FromUserInfoResponse(info)
+	userSession, err := sessionManager.UserSession(c)
 	if err != nil {
 		return logUnauthorized(c, err)
 	}
 
-	infoJson, err := json.Marshal(info)
-	userSession.Values["info"] = infoJson
-
-	logger.Info("user info profile: ", info.Profile)
-	if err = saveSession(userSession, c); err != nil {
+	if err = userSession.SaveValues(*userSessionValues, c); err != nil {
 		return logUnauthorized(c, err)
 	}
 
@@ -171,6 +162,8 @@ func options() []rp.Option {
 
 func setupAuthClients() {
 	var err error
+
+	sessionManager = sessions.NewSessionManager().WithCookieDomain(cookieDomain)
 
 	relyingParty, err = rp.NewRelyingPartyOIDC(context.TODO(), issuerURL, clientID, clientSecret, redirectURL, scopes, options()...)
 	if err != nil {

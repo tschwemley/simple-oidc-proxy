@@ -1,14 +1,18 @@
 module git.schwem.io/oidcsso
 
-go 1.22
+go 1.23
+
+toolchain go1.23.2
 
 require (
-	github.com/gorilla/sessions v1.3.0
+	git.schwem.io/schwem/pkgs v0.0.0-20241004042017-2b019f6628f7
+	github.com/google/uuid v1.6.0
+	github.com/gorilla/sessions v1.4.0
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo-contrib v0.17.1
 	github.com/labstack/echo/v4 v4.12.0
 	github.com/rs/zerolog v1.33.0
-	github.com/zitadel/oidc/v3 v3.29.1
+	github.com/zitadel/oidc/v3 v3.30.0
 )
 
 require (
@@ -16,7 +20,6 @@ require (
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/context v1.1.2 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
