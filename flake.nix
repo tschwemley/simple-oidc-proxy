@@ -46,10 +46,15 @@
             '';
           };
 
-          packages.default = pkgs.buildGoModule {
+          packages.default = pkgs.buildGo123Module {
+            # __noChroot = true;
+
             name = "oidc-sso";
+
             src = ./.;
-            vendorHash = "sha256-jdhmp/BMWafmJHZ4uwWZFDHVo2Swuvg3ef69uuhLC0A=";
+
+            vendorHash = "sha256-/y4upXlHhq3Vuz5TgKxI+L35+aMoQVlu2A9OfzoyOx0=";
+            # preferLocal = true;
           };
         };
     };

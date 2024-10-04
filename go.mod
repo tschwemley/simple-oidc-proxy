@@ -1,4 +1,4 @@
-module git.schwem.io/oidcsso
+module git.schwem.io/schwem/oidcsso
 
 go 1.23
 
