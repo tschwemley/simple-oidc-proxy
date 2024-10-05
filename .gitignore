@@ -1,5 +1,4 @@
 .direnv/
-.env
 node_modules/
 result
 tmp/

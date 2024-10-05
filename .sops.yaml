@@ -2,7 +2,8 @@ keys:
   - &oidc-sso age1fnlep954kqzdy62qpzap8ex0xm3xzcd9rau52rgewt7rtwn2huaqg593p9
 
 creation_rules:
-  - path_regex: ^(./)?(.encrypted)?.env
+  # - path_regex: ^(./)?(.encrypted)?.env
+  - path_regex: ^(./)?(.encrypted|build)?.env
     key_groups:
       - age:
           - *oidc-sso
