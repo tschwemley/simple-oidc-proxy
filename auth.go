@@ -1,48 +1,23 @@
 package main
 
 import (
-	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"time"
 
-	oidcTypes "git.schwem.io/schwem/pkgs/oidc"
-	"git.schwem.io/schwem/pkgs/sessions"
+	"git.schwem.io/schwem/pkgs/logger"
+	"git.schwem.io/schwem/pkgs/oidc"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/zitadel/oidc/v3/pkg/client/rp"
-	"github.com/zitadel/oidc/v3/pkg/client/rs"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	oidcTypes "github.com/zitadel/oidc/v3/pkg/oidc"
 )
 
-var (
-	relyingParty   rp.RelyingParty
-	resourceServer rs.ResourceServer
-	sessionManager *sessions.SessionManager
-
-	redirectURI string
-	scopes      = []string{oidc.ScopeOpenID}
-
-	keyPath      = ""
-	responseMode = ""
-
-	cookieDomain     string
-	cookieAuthKey    []byte
-	cookieEncryptKey []byte
-
-	clientID     string
-	clientSecret string
-	issuerURL    string
-	redirectURL  string
-)
-
-// AuthHandler returns 200 if the user is authorized and 401 if the user is not authorized. It is accessible at "/auth"
+// AuthHandler is an Echo handler that provides nginx auth request compliant behavior.
+// Returns 200 if the user is authorized and 401 if the user is not authorized.
 func AuthHandler(c echo.Context) error {
-	// sess, err := userSession(c)
-	userSession, err := sessionManager.UserSession(c)
+	userSession, err := oidc.UserSession(c)
 	if err != nil {
 		return logUnauthorized(c, err)
 	}
@@ -60,118 +35,84 @@ func AuthHandler(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
+// LoginHandler is an Echo handler that handles redirecting to the login page of the OIDC provider as part of the
+// authorization code flow. It creates a session which stores the state for the auth flow and then redirects to the OIDC
+// provider auth/login URL.
+//
+// The auth flow state stored is PKCE (always sent for now) and a Redirect URL for when coming back from the callback.
 func LoginHandler(c echo.Context) error {
 	// create the sso session (this is short lived for the oidc/oauth flow and holds pkce, etc.)
-	oidcSession, err := oidcSession(c)
+	oidcSession, err := oidc.OidcSession(c)
 	if err != nil {
 		return logUnauthorized(c, err)
 	}
 
-	// store url to redirect back to in the oidc session
-	oidcSession.Values["redirect"] = c.QueryParam("rd")
+	oidcSessionValues := oidc.AuthFlowState{
+		PKCE:        base64.RawURLEncoding.EncodeToString([]byte(uuid.New().String())),
+		RedirectURL: c.QueryParam("rd"),
+	}
+	oidcSession.SetValues(oidcSessionValues)
 
-	// generate code verifier and store in sso session
-	oidcSession.Values["pkce"] = base64.RawURLEncoding.EncodeToString([]byte(uuid.New().String()))
-
-	// generate the code challenge from the code verifier
-	codeChallenge := oidc.NewSHACodeChallenge(oidcSession.Values["pkce"].(string))
-
-	if err := saveSession(oidcSession, c); err != nil {
+	if err := oidcSession.Session.Save(c); err != nil {
 		return logUnauthorized(c, err)
 	}
 
-	url := rp.AuthURL("", relyingParty, rp.WithCodeChallenge(codeChallenge))
+	logger.Infof("[LoginHandler]  oidcSessionValues: %+v", oidcSessionValues)
+	url := rp.AuthURL("", *oidc.RelyingParty, rp.WithCodeChallenge(oidcSessionValues.NewSHACodeChallenge()))
 	return c.Redirect(http.StatusFound, url)
 }
 
+// CallbackHandler handles the callback/redirect from the Auth/Login endpoint of the OIDC provider. It takes the
+// following steps:
+//  1. Checks that the code verifier is valid.
+//  2. Exchanges the code passed from the OIDC provider for an authorization token.
+//  3. Retrieves the OIDC user info from the token response
+//  4. Stores the relevant retrieved user info into the user session and save the session
+//  5. Redirects to the URL provided in the OidcSession from the LoginHandler
 func CallbackHandler(c echo.Context) error {
-	oidcSession, err := oidcSession(c)
+	oidcSession, err := oidc.OidcSession(c)
 	if err != nil {
 		return logUnauthorized(c, err)
 	}
 
-	codeVerifier, ok := oidcSession.Values["pkce"]
-	if !ok {
+	// 1. ensure code verifier valid
+	codeVerifier := oidcSession.AuthFlowState().PKCE
+	if codeVerifier == "" {
+		logger.Info("code verifier is empty")
 		return logUnauthorized(c, errors.New("no code verifier set"))
 	}
 
-	redirect, ok := oidcSession.Values["redirect"].(string)
-	if !ok {
-		redirect = "" // TODO: fill out
-	}
-
+	// 2. exchange the code for the authorization token and ensure it's valid
 	ctx := c.Request().Context()
 	code := c.QueryParam("code")
-
-	tokens, err := rp.CodeExchange[*oidc.IDTokenClaims](ctx, code, relyingParty, rp.WithCodeVerifier(codeVerifier.(string)))
+	tokens, err := rp.CodeExchange[*oidcTypes.IDTokenClaims](ctx, code, *oidc.RelyingParty, rp.WithCodeVerifier(codeVerifier))
 	if err != nil {
 		return logUnauthorized(c, err)
 	}
 
-	info, err := rp.Userinfo[*oidc.UserInfo](ctx, tokens.AccessToken, tokens.TokenType, tokens.IDTokenClaims.GetSubject(), relyingParty)
+	// 3. get the user info from the token resposne
+	respInfo, err := rp.Userinfo[*oidcTypes.UserInfo](ctx, tokens.AccessToken, tokens.TokenType, tokens.IDTokenClaims.GetSubject(), *oidc.RelyingParty)
 	if err != nil {
 		return logUnauthorized(c, err)
 	}
 
-	userSessionValues := oidcTypes.NewUserInfo().FromTokens(tokens).FromUserInfoResponse(info)
-	userSession, err := sessionManager.UserSession(c)
+	// 4. Store the relevant retrieved user info into the user session and save the session
+	userSession, err := oidc.UserSession(c)
 	if err != nil {
 		return logUnauthorized(c, err)
 	}
 
-	if err = userSession.SaveValues(*userSessionValues, c); err != nil {
+	userInfo := oidc.NewUserInfo().FromTokens(tokens).FromUserInfoResponse(respInfo)
+	userSession.SetValues(userInfo)
+	if err = userSession.Save(c); err != nil {
 		return logUnauthorized(c, err)
 	}
 
-	return c.Redirect(http.StatusFound, redirect)
-}
-
-func loadOidcParams() {
-	clientID = os.Getenv("OIDC_SSO_CLIENT_ID")
-	clientSecret = os.Getenv("OIDC_SSO_CLIENT_SECRET")
-
-	issuerURL = os.Getenv("OIDC_SSO_ISSUER_URL")
-	redirectURL = os.Getenv("OIDC_SSO_REDIRECT_URL")
-
-	if clientID == "" || clientSecret == "" || issuerURL == "" || redirectURL == "" {
-		logger.Fatal("missing one or more of required oidc params: client_id, client_secret, issuer_url, redirect_url")
-	}
-
-	cookieAuthKey = []byte(os.Getenv("OIDC_SSO_HASH_KEY"))
-	cookieEncryptKey = []byte(os.Getenv("OIDC_SSO_ENCRYPT_KEY"))
-
-	cookieDomain = os.Getenv("OIDC_SSO_COOKIE_DOMAIN")
-	if cookieDomain == "" {
-		cookieDomain = "localhost"
-	}
+	// 5. Redirect back to the URL provided in the session (originally from LoginHandler)
+	return c.Redirect(http.StatusFound, oidcSession.AuthFlowState().RedirectURL)
 }
 
 func logUnauthorized(c echo.Context, err error) error {
 	logger.Error(err)
 	return c.NoContent(http.StatusUnauthorized)
-}
-
-func options() []rp.Option {
-	options := []rp.Option{
-		rp.WithVerifierOpts(rp.WithIssuedAtOffset(5 * time.Second)),
-		rp.WithSigningAlgsFromDiscovery(),
-	}
-
-	return options
-}
-
-func setupAuthClients() {
-	var err error
-
-	sessionManager = sessions.NewSessionManager().WithCookieDomain(cookieDomain)
-
-	relyingParty, err = rp.NewRelyingPartyOIDC(context.TODO(), issuerURL, clientID, clientSecret, redirectURL, scopes, options()...)
-	if err != nil {
-		logger.Fatalf("error creating relying party provider %s", err.Error())
-	}
-
-	resourceServer, err = rs.NewResourceServerClientCredentials(context.TODO(), issuerURL, clientID, clientSecret)
-	if err != nil {
-		logger.Fatalf("error creating resource server provider %s", err.Error())
-	}
 }

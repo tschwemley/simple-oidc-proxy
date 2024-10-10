@@ -4,33 +4,46 @@ import (
 	"flag"
 	"os"
 
-	"github.com/gorilla/sessions"
+	"git.schwem.io/schwem/pkgs/logger"
+	"git.schwem.io/schwem/pkgs/oidc"
 	"github.com/joho/godotenv"
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 )
 
 var (
-	cookieStore *sessions.CookieStore
-	listenPort  string
-
-	logger Logger
+	// cookieStore *sessions.CookieStore
+	listenPort string
 
 	// flag variables
 	envFile string
 	debug   bool
 )
 
-// init handles parsing flags and initializing logger
+// init parses flags, sets global logging options, and reads in environment vars/config prior to main program execution
 func init() {
 	flag.BoolVar(&debug, "d", false, "enable debug output")
 	flag.StringVar(&envFile, "e", ".env", "the environment file to load from")
 
 	flag.Parse()
 
-	logger = NewLogger(LoggerOptions{Debug: debug})
+	logger.SetupLogger(logger.LoggerOptions{})
 
-	loadEnv()
+	// if an environment file was passed as an argument, load it
+	if envFile != ".env" {
+		err := godotenv.Load(envFile)
+		if err != nil {
+			logger.Fatal(err)
+		}
+	}
+
+	listenPort = os.Getenv("LISTEN_PORT")
+	if listenPort == "" {
+		logger.Fatal("missing listen port")
+	}
+
+	initOidc()
 }
 
 // Simple OIDC/OAuth2 proxy. Performs the following flow (for my setup the routing is handled via nginx and the auth_reqest directive):
@@ -46,33 +59,31 @@ func init() {
 //  4. Ensure valid data returned back and set user session.
 func main() {
 	e := echo.New()
-	// logger = e.Logger
-	// _, w, _ := os.Pipe()
-	// logger.SetOutput(w)
 
-	// loadEnv()
-	setupAuthClients()
-
-	cookieStore = sessions.NewCookieStore(cookieAuthKey, cookieEncryptKey)
-	e.Use(session.Middleware(cookieStore))
+	e.Use(session.Middleware(oidc.SessionManager.CookieStore()))
 
 	e.GET("/auth", AuthHandler)
 	e.GET("/auth/callback", CallbackHandler)
-	// e.GET("/check-token", CheckTokenHandler)
 	e.GET("/login", LoginHandler)
 
 	logger.Fatal(e.Start(":" + listenPort))
 }
 
-func loadEnv() {
-	if err := godotenv.Load(envFile); err != nil {
+// initialize required variables for OIDC provider
+func initOidc() {
+	config := oidc.Config{
+		CookieDomain:     os.Getenv("COOKIE_DOMAIN"),
+		CookieAuthKey:    os.Getenv("COOKIE_AUTH_KEY"),
+		CookieEncryptKey: os.Getenv("COOKIE_ENCRYPT_KEY"),
+
+		ClientID:     os.Getenv("CLIENT_ID"),
+		ClientSecret: os.Getenv("CLIENT_SECRET"),
+		Issuer:       os.Getenv("ISSUER_URL"),
+		Redirect:     os.Getenv("REDIRECT_URL"),
+	}
+
+	err := oidc.Init(config)
+	if err != nil {
 		logger.Fatal(err)
 	}
-
-	listenPort = os.Getenv("OIDC_SSO_LISTEN_PORT")
-	if listenPort == "" {
-		logger.Fatal("missing listen port")
-	}
-
-	loadOidcParams()
 }
