@@ -1,5 +1,5 @@
-git.schwem.io/schwem/pkgs v0.0.0-20241004042017-2b019f6628f7 h1:j1aBzxcOrszSO832UmmXK+jjW/pt0mwyHOP1DJPBXdM=
-git.schwem.io/schwem/pkgs v0.0.0-20241004042017-2b019f6628f7/go.mod h1:0z5lTjnZ6B64XwPm/zJcc1jpMln3V4VXmTy0d3GIi9U=
+git.schwem.io/schwem/pkgs v0.0.0-20241009061724-51a37a6b4866 h1:gal/MdYUvawWO2Lketvt+uP4FKJjPnhxl8SMOy2jGc4=
+git.schwem.io/schwem/pkgs v0.0.0-20241009061724-51a37a6b4866/go.mod h1:RyAEdRy5WQppJGq9P4id2fEbzZRefwgRaGZpChLI17I=
 github.com/bmatcuk/doublestar/v4 v4.6.1 h1:FH9SifrbvJhnlQpztAx++wlkk70QBf0iBWDwNy7PA4I=
 github.com/bmatcuk/doublestar/v4 v4.6.1/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
