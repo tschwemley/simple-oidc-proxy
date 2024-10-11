@@ -49,21 +49,10 @@
           };
 
           packages.default = pkgs.buildGo123Module {
-            #__noChroot = true;
-
             name = "oidcsso";
 
             src = ./.;
-
-            vendorHash = "sha256-/y4upXlHhq3Vuz5TgKxI+L35+aMoQVlu2A9OfzoyOx0=";
-            preferLocal = true;
-
-            # impureEnvVars = [
-            #   "REPO_HOST"
-            #   "REPO_USER"
-            #   "REPO_PASS"
-            # ];
-
+            vendorHash = "sha256-06buojNRtqvr/uBc/572smG92UfwSSVlQlLZkULwDXo=";
             preBuild = # bash
               ''
                 export HOME=$(mktemp -d)

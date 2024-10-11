@@ -5,7 +5,7 @@ go 1.23
 toolchain go1.23.2
 
 require (
-	git.schwem.io/schwem/pkgs v0.0.0-20241009061724-51a37a6b4866
+	git.schwem.io/schwem/pkgs v0.0.0-20241010060941-907a037e0a02
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo-contrib v0.17.1
