@@ -73,7 +73,3 @@ func main() {
 
 	logger.Fatal(e.Start(":" + port))
 }
-
-// initialize required variables for OIDC provider
-func initOidc() {
-}
