@@ -7,14 +7,12 @@ import (
 	"git.schwem.io/schwem/pkgs/logger"
 	"git.schwem.io/schwem/pkgs/oidc"
 	"github.com/joho/godotenv"
-	_ "github.com/joho/godotenv/autoload"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 )
 
 var (
-	// cookieStore *sessions.CookieStore
-	listenPort string
+	port string
 
 	// flag variables
 	envFile string
@@ -25,25 +23,32 @@ var (
 func init() {
 	flag.BoolVar(&debug, "d", false, "enable debug output")
 	flag.StringVar(&envFile, "e", ".env", "the environment file to load from")
+	flag.StringVar(&port, "p", "1337", "the port that the server will listen on")
 
 	flag.Parse()
 
+	// configure default logging settings
 	logger.SetupLogger(logger.LoggerOptions{})
 
 	// if an environment file was passed as an argument, load it
-	if envFile != ".env" {
-		err := godotenv.Load(envFile)
-		if err != nil {
-			logger.Fatal(err)
-		}
+	if err := godotenv.Load(envFile); err != nil {
+		logger.Fatal(err)
 	}
 
-	listenPort = os.Getenv("LISTEN_PORT")
-	if listenPort == "" {
-		logger.Fatal("missing listen port")
-	}
+	err := oidc.Init(oidc.Config{
+		CookieDomain:     os.Getenv("COOKIE_DOMAIN"),
+		CookieAuthKey:    os.Getenv("COOKIE_AUTH_KEY"),
+		CookieEncryptKey: os.Getenv("COOKIE_ENCRYPT_KEY"),
 
-	initOidc()
+		ClientID:     os.Getenv("CLIENT_ID"),
+		ClientSecret: os.Getenv("CLIENT_SECRET"),
+		Issuer:       os.Getenv("ISSUER_URL"),
+		Redirect:     os.Getenv("REDIRECT_URL"),
+	})
+
+	if err != nil {
+		logger.Fatal(err)
+	}
 }
 
 // Simple OIDC/OAuth2 proxy. Performs the following flow (for my setup the routing is handled via nginx and the auth_reqest directive):
@@ -66,24 +71,9 @@ func main() {
 	e.GET("/auth/callback", CallbackHandler)
 	e.GET("/login", LoginHandler)
 
-	logger.Fatal(e.Start(":" + listenPort))
+	logger.Fatal(e.Start(":" + port))
 }
 
 // initialize required variables for OIDC provider
 func initOidc() {
-	config := oidc.Config{
-		CookieDomain:     os.Getenv("COOKIE_DOMAIN"),
-		CookieAuthKey:    os.Getenv("COOKIE_AUTH_KEY"),
-		CookieEncryptKey: os.Getenv("COOKIE_ENCRYPT_KEY"),
-
-		ClientID:     os.Getenv("CLIENT_ID"),
-		ClientSecret: os.Getenv("CLIENT_SECRET"),
-		Issuer:       os.Getenv("ISSUER_URL"),
-		Redirect:     os.Getenv("REDIRECT_URL"),
-	}
-
-	err := oidc.Init(config)
-	if err != nil {
-		logger.Fatal(err)
-	}
 }
